@@ -1,8 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace AlexanderPoellmann\LaravelDpd\Data;
 
-use UnexpectedValueException;
+use AlexanderPoellmann\LaravelDpd\Exceptions\DpdResponseException;
 
 final readonly class DpdResponse
 {
@@ -18,8 +20,16 @@ final readonly class DpdResponse
     /** @param array<string, mixed> $payload */
     public static function fromArray(array $payload): self
     {
+        if (! isset($payload['status']) || ! is_string($payload['status']) || trim($payload['status']) === '') {
+            throw new DpdResponseException('DPD returned an invalid response status.');
+        }
+
+        if (! array_key_exists('result', $payload)) {
+            throw new DpdResponseException('DPD response did not contain a result.');
+        }
+
         return new self(
-            status: (string) ($payload['status'] ?? ''),
+            status: $payload['status'],
             result: $payload['result'] ?? null,
             raw: $payload,
         );
@@ -33,8 +43,8 @@ final readonly class DpdResponse
     /** @return array<string, mixed> */
     public function associativeResult(): array
     {
-        if (! is_array($this->result)) {
-            throw new UnexpectedValueException('DPD returned an unexpected result shape.');
+        if (! is_array($this->result) || ($this->result !== [] && array_is_list($this->result))) {
+            throw new DpdResponseException('DPD returned an unexpected result shape.');
         }
 
         return $this->result;
@@ -45,7 +55,7 @@ final readonly class DpdResponse
     {
         if (! is_array($this->result) || ! array_is_list($this->result)
             || ! array_all($this->result, fn (mixed $item): bool => is_array($item))) {
-            throw new UnexpectedValueException('DPD returned an unexpected result list.');
+            throw new DpdResponseException('DPD returned an unexpected result list.');
         }
 
         return $this->result;
@@ -53,10 +63,10 @@ final readonly class DpdResponse
 
     public function stringResult(): string
     {
-        if (! is_scalar($this->result) && $this->result !== null) {
-            throw new UnexpectedValueException('DPD returned an unexpected scalar result.');
+        if (! is_string($this->result)) {
+            throw new DpdResponseException('DPD returned an unexpected string result.');
         }
 
-        return (string) $this->result;
+        return $this->result;
     }
 }

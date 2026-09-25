@@ -1,8 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace AlexanderPoellmann\LaravelDpd\Data;
 
-use UnexpectedValueException;
+use AlexanderPoellmann\LaravelDpd\Exceptions\DpdResponseException;
 
 final readonly class LabelSheetResult
 {
@@ -17,7 +19,7 @@ final readonly class LabelSheetResult
         $url = $response->associativeResult()['label'] ?? null;
 
         if (! is_string($url) || trim($url) === '') {
-            throw new UnexpectedValueException('DPD response did not contain a label URL.');
+            throw new DpdResponseException('DPD response did not contain a label URL.');
         }
 
         return new self($url, $response->raw);

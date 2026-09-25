@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace AlexanderPoellmann\LaravelDpd\Data;
 
 use AlexanderPoellmann\LaravelDpd\Enums\ParcelType;
@@ -7,24 +9,25 @@ use InvalidArgumentException;
 
 final readonly class Parcel
 {
-    /**
-     * @param  list<string>  $references
-     */
     public function __construct(
         public ParcelType $type = ParcelType::Dpd,
         public ?int $weightInGrams = null,
         public ?int $lengthInMillimeters = null,
         public ?int $widthInMillimeters = null,
         public ?int $heightInMillimeters = null,
-        public array $references = [],
-        public ?string $invoiceNumber = null,
     ) {
-        if ($this->weightInGrams !== null && ($this->weightInGrams < 1 || $this->weightInGrams > 31500)) {
-            throw new InvalidArgumentException('DPD parcel weight must be between 1 and 31,500 grams.');
+        if ($this->weightInGrams !== null && ($this->weightInGrams < 10 || $this->weightInGrams > 31500)) {
+            throw new InvalidArgumentException('DPD parcel weight must be between 10 and 31,500 grams.');
         }
 
-        if (count($this->references) > 10) {
-            throw new InvalidArgumentException('DPD supports at most ten delivery references.');
+        if ($this->type === ParcelType::ParcelShop && $this->weightInGrams > 20000) {
+            throw new InvalidArgumentException('DPD parcel shop parcels may not exceed 20,000 grams.');
+        }
+
+        $suppliedDimensions = count(array_filter($this->dimensions(), fn (?int $dimension): bool => $dimension !== null));
+
+        if ($suppliedDimensions !== 0 && $suppliedDimensions !== 3) {
+            throw new InvalidArgumentException('DPD parcel dimensions must be supplied together.');
         }
 
         foreach ($this->dimensions() as $dimension) {
@@ -38,8 +41,6 @@ final readonly class Parcel
     public function toArray(): array
     {
         return [
-            'liefernr' => implode('~', $this->references),
-            'rechnungsnr' => $this->invoiceNumber ?? '',
             'pakettyp' => $this->type->value,
             'gewicht' => $this->weightInGrams !== null ? (string) $this->weightInGrams : '',
             'volumen' => $this->volume(),

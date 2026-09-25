@@ -47,6 +47,7 @@ DPD_TIMEOUT=30
 DPD_CONNECT_TIMEOUT=10
 DPD_RETRIES=2
 DPD_RETRY_DELAY_MS=250
+DPD_EVENTS_ENABLED=false
 ```
 
 The default REST endpoint is:
@@ -83,15 +84,16 @@ $request = new LabelRequest(
         phone: '+431234567',
         email: 'maria@example.com',
     ),
-    parcel: new Parcel(
+    parcels: new Parcel(
         type: ParcelType::B2c,
         weightInGrams: 3500,
-        references: ['ORDER-12345'],
     ),
     products: Products::normalParcel()->withPredict('maria@example.com'),
     shippingDate: now(),
     option: LabelOption::DigitalLabel,
     customerReference: 'ORDER-12345',
+    references: ['ORDER-12345'],
+    invoiceNumber: 'INV-12345',
 );
 
 $result = Dpd::createLabel($request);
@@ -106,29 +108,107 @@ $label->digitalCodeUrl; // when option "2d" is requested
 
 DPD may return a top-level successful response containing a failed item in a multi-label result. The package deliberately keeps `Label::$errorCode` on each item instead of throwing away successful siblings. Use `$result->successful()` to require every returned label to be successful.
 
-## Products and additional services
+## Multiple parcels
 
-`Product1` contains the documented product-1 values (`KP`, `NP`, `RETURN`, `S2S`, primetime time services, and Saturday services).
-
-Product 2-7 structures vary by service. `Products` therefore keeps those fields typed as `array|string|null` and provides helpers for common DPD services:
+Pass one `Parcel` or a list of parcels to `LabelRequest`. Each parcel has its own weight in grams. References and the invoice number belong to the shipment:
 
 ```php
+$request = new LabelRequest(
+    recipient: $recipient,
+    parcels: [
+        new Parcel(weightInGrams: 3000),
+        new Parcel(weightInGrams: 13500),
+        new Parcel(weightInGrams: 23500),
+    ],
+    products: Products::normalParcel(),
+    shippingDate: now(),
+    references: ['0815ab', 'LFNR214687'],
+    invoiceNumber: '202308abcd',
+);
+
+$result = Dpd::createLabel($request);
+```
+
+The package derives the label count from `$request->parcels` and encodes the weights in parcel order. Application code supplies integers and arrays; the package handles DPD's separators. This follows **Request und Response.pdf, section 2.4, page 11** for individual weights and **section 3.4, page 60** for the REST envelope. The REST example omits all weights, which is also supported where weights are optional.
+
+Requests accept 1–20 parcels. Each supplied weight must be 10–31,500 grams, or at most 20,000 grams for parcel shop delivery; product `KP` allows at most 3,000 grams per parcel. Germany requires a weight for every parcel. Elsewhere, supply every weight or omit all weights. The normal-parcel product accepts the documented mixed-weight example, including its 3,000-gram parcel.
+
+All parcels must use the same parcel type and volume because DPD documents one `pakettyp` and one `volumen` per request. Dimensions must be complete when supplied; requests with different volumes must be split. References allow at most ten entries and 210 characters in total including separators. Invoice numbers allow 50 characters. Shipping dates may be at most 25 days in the future.
+
+## Products and additional services
+
+`Products` composes immutable, typed additional services. Each object validates its values and supplies its DPD payload and product slot. Monetary amounts are integers in cents; do not pass floats or formatted currency strings.
+
+```php
+use AlexanderPoellmann\LaravelDpd\Data\AdditionalServices\HigherInsurance;
+use AlexanderPoellmann\LaravelDpd\Data\AdditionalServices\Predict;
 use AlexanderPoellmann\LaravelDpd\Data\Products;
 
 $products = Products::normalParcel()
-    ->withHigherInsurance(1500000) // cents, as expected by DPD
-    ->withPredict('recipient@example.com');
+    ->with(new HigherInsurance(amountInCents: 1500000)) // EUR 15,000
+    ->with(new Predict('recipient@example.com'));
+
+// Pass $products to LabelRequest(products: $products, ...).
 ```
 
-You can pass another documented structure directly:
+The following services follow **WEB_Service_EN.pdf, sections 15.5?15.13**. The concrete REST examples in **Request und Response.pdf, sections 3.3, 3.5, 3.14?3.16** establish the `pred`, `hv`, `abt`, `nnbar`/`refnnbar`, and `wp` payloads.
+
+| Service class | Product slot / wire value | Local validation |
+| --- | --- | --- |
+| `HigherInsurance` | 2 / `hv` | 52,001?1,500,000 cents (EUR 520.01?15,000) |
+| `Predict` | 6 / `pred` | Valid email; SMS is not supported by this version |
+| `CashOnDelivery` | 3 / `nnbar`, optional `refnnbar` | Primetime national COD; 1?700,000 cents; reference at most 200 characters |
+| `IdentityCheck` | 2 / `id`, `id16`, or `id18` | Primetime; required recipient name, at most 30 characters |
+| `DepartmentDelivery` | 2 / `abt` | Primetime; required department, at most 30 characters |
+| `Aviso` | 2 / `aviso` | Primetime; valid email or international phone number using `+` and digits |
+| `ValuableParcel` | 4 / `wp` | Primetime; 52,001?1,500,000 cents |
+| `FreightCollect` | 5 / `UNFREI` | DPD's documented MGL / Metro service; no additional fields |
+| `ConstructionSiteDelivery` | 6 / `bau` | Primetime; no additional fields |
+| `LimitedQuantity` | 7 / `LQ` | Positive gross mass in grams; the manual does not specify a numeric ADR limit |
+
+### Primetime services
+
+COD is sufficiently specified for **primetime national shipments** in this documentation. The DPD COD error code alone does not define a standard DPD COD request, so no such payload is inferred.
 
 ```php
-$products = new Products(
-    product1: 'NP',
-    product2: ['hv' => '1500000'],
-    product6: ['pred' => 'recipient@example.com'],
+use AlexanderPoellmann\LaravelDpd\Data\AdditionalServices\CashOnDelivery;
+use AlexanderPoellmann\LaravelDpd\Data\AdditionalServices\IdentityCheck;
+use AlexanderPoellmann\LaravelDpd\Data\AdditionalServices\ValuableParcel;
+use AlexanderPoellmann\LaravelDpd\Enums\IdentityCheckType;
+use AlexanderPoellmann\LaravelDpd\Enums\Product1;
+
+$products = (new Products(Product1::Primetime17))
+    ->with(new IdentityCheck('Maria Muster', IdentityCheckType::Age18))
+    ->with(new CashOnDelivery(amountInCents: 36000, reference: 'ORDER-42'))
+    ->with(new ValuableParcel(amountInCents: 1500000));
+
+$request = new LabelRequest(
+    recipient: $recipient, // Primetime also requires a recipient phone number.
+    parcels: new Parcel(type: ParcelType::Primetime, weightInGrams: 3500),
+    products: $products,
+    shippingDate: now(),
 );
 ```
+
+Use `IdentityCheckType::Identity` (the default), `Age16`, or `Age18` for the documented identity variants. Other primetime Product 2 choices include `new DepartmentDelivery('Verkauf')` and `new Aviso('+4369912345678')`.
+
+`with()` returns a new `Products` instance and replaces the selected slot. For example, departmental delivery replaces an identity check in Product 2; their payloads are not automatically merged. Other slots are retained. Known DPD/primetime Product1 mismatches are rejected for both enum and string codes, and requests check the parcel family. Unknown Product1 codes remain available without guessing their compatibility.
+
+### Compatibility and raw payloads
+
+Existing `withHigherInsurance()` and `withPredict()` calls still work and now use typed validation. Constructor arrays, strings, and `null` remain supported as raw values. Prefer `withRaw()` to make bypassing service validation explicit:
+
+```php
+use AlexanderPoellmann\LaravelDpd\Enums\ProductSlot;
+
+$products = Products::normalParcel()
+    ->withRaw(ProductSlot::Product2, ['hv' => '1500000'])
+    ->with(new Predict('recipient@example.com'));
+```
+
+`withRaw()` accepts a string or an array, including nested future payloads, and preserves it exactly. `RawAdditionalService` offers the equivalent service object. Raw values bypass service and compatibility validation; use payloads agreed with DPD. The drop-off location catalogue (`asg`) is external to the bundled PDFs, and the swap service (`AUST`) has no concrete payload example there; these remain raw until their allowed values and payload structure are confirmed.
+
+Order import's existing `product2`?`product7` parameters also accept typed service objects, for example `product6: new Predict('recipient@example.com')`. Typed values are validated and serialized through `Products`.
 
 ## Other WEB.Service functions
 
@@ -177,8 +257,43 @@ $order = Dpd::importOrder(new OrderImportRequest(
     product1: Product1::NormalParcel,
 ));
 
-$services = Dpd::status();
+$services = Dpd::serviceStatus();
 ```
+
+`serviceStatus()` reports DPD WEB.Service availability and returns a list of `ServiceState` objects. The existing `status()` method remains a deprecated forwarding alias with the same return values and exceptions. Both call DPD's `getStatus` operation; they do not retrieve parcel tracking information.
+
+Parcel numbers must contain exactly 14 ASCII digits; leading zeroes are preserved. Cancellation, reprints, and label sheets accept strings or `Data\TrackingNumber` objects. Existing result properties continue to expose strings. Invalid numbers throw `InvalidTrackingNumberException` before an HTTP request is sent.
+
+`LabelSheetRequest` serializes `trackingnumberList` as a JSON array, following the REST example in **Request und Response.pdf, section 3.22, page 94**. The main manual's section 18.2 shows a conflicting comma-separated example.
+
+## Optional request events
+
+Set `DPD_EVENTS_ENABLED=true` or `config(['dpd.events.enabled' => true])` to enable sanitized Laravel events. They are disabled by default. The package does not register loggers or write logs.
+
+| Event in `AlexanderPoellmann\LaravelDpd\Events` | Metadata |
+| --- | --- |
+| `DpdRequestStarted` | `operation` |
+| `DpdRequestSucceeded` | `operation`, `durationMilliseconds`, `httpStatus` |
+| `DpdRequestFailed` | `operation`, `durationMilliseconds`, nullable `httpStatus`, nullable `errorCode` |
+
+Operation names are the DPD API names, such as `getLabel` and `getStatus`, or `downloadLabel` for document retrieval. A logical request emits a started event and a final succeeded or failed event. Duration includes HTTP retries; intermediate attempts do not emit separate package events. Connection failures have no HTTP status. The failure event exposes only the first parsed DPD code when available, never its message.
+
+Events contain no credentials, password hashes, recipient data, tracking numbers, URLs, exception objects, or raw request/response payloads. Applications can register listeners in a service provider:
+
+```php
+use AlexanderPoellmann\LaravelDpd\Events\DpdRequestFailed;
+use Illuminate\Support\Facades\Event;
+
+Event::listen(DpdRequestFailed::class, function (DpdRequestFailed $event): void {
+    // Feed these sanitized values into your application's metrics or alerting.
+    $event->operation;
+    $event->durationMilliseconds;
+    $event->httpStatus;
+    $event->errorCode;
+});
+```
+
+API events describe the built-in REST transport's HTTP exchange and response envelope, before operation-specific result mapping. A successful envelope can still contain failed individual labels; inspect the returned label errors for those outcomes. Download events include document validation. Input or configuration failures before a request starts emit no events. Custom transports can choose their own event integration. Laravel listeners run normally; exceptions thrown by listeners propagate to the caller.
 
 ## Exceptions
 
@@ -186,9 +301,13 @@ Transport and API failures are separated:
 
 - `ConfigurationException`: missing credentials
 - `DpdTransportException`: connection, HTTP, or malformed JSON failure
-- `DpdApiException`: DPD returned a non-`ok` response
+- `DpdApiException`: DPD reported errors, including a global `err_code` inside an `ok` response
+- `DpdResponseException`: an unexpected response structure, field type, label URL, or document content
+- `InvalidTrackingNumberException`: a parcel number does not contain exactly 14 ASCII digits
 
-`DpdApiException` exposes the parsed `errorCode` and, for documented base codes, `knownErrorCode` (`DpdErrorCode`).
+All of these exceptions extend `DpdException`, so callers can catch package failures through that base class.
+
+`DpdApiException::$errors` contains immutable `DpdError` objects. Each exposes `code`, `message`, optional `index`, and optional `knownCode` (`DpdErrorCode`). Codes without a known enum retain their original code; uncoded errors have a `null` code. Documented service-specific codes such as `PR02-hv` are preserved and recognized.
 
 ```php
 use AlexanderPoellmann\LaravelDpd\Exceptions\DpdApiException;
@@ -196,14 +315,41 @@ use AlexanderPoellmann\LaravelDpd\Exceptions\DpdApiException;
 try {
     $result = Dpd::cancelLabel($trackingNumber);
 } catch (DpdApiException $exception) {
-    report($exception);
-
-    $exception->errorCode;      // e.g. FR06
-    $exception->knownErrorCode; // enum when recognized
+    foreach ($exception->errors as $error) {
+        $error->code;      // e.g. FR06
+        $error->message;   // human-readable description without the code/index prefix
+        $error->index;     // e.g. 0, or null if absent
+        $error->knownCode; // DpdErrorCode when recognized
+    }
 }
 ```
 
-## Label URL lifetime
+The existing `errorCode` and `knownErrorCode` exception properties remain aliases for the first error. Partial label results retain all siblings: inspect `$label->errors` for structured failures and `$label->errorCode` for the original string. Multiple indexed errors and error lists are parsed without requiring callers to inspect exception messages.
+
+Transport exception messages contain no raw response body or underlying connection message. For explicit diagnostics, `DpdTransportException::$rawBody` retains the HTTP/malformed JSON response body, `statusCode` retains an HTTP failure status, and `getPrevious()` retains a connection exception. These diagnostic values may contain recipient data or temporary URL tokens; they are not part of the normal message.
+
+## Download label documents
+
+```php
+$result = Dpd::createLabel($request);
+$document = Dpd::downloadLabel($result->labels[0]);
+
+$document->contents;  // Binary string, preserved byte for byte
+$document->mimeType;  // application/pdf, or text/plain for ZPL/EPL
+$document->format;    // LabelFormat::Pdf, LabelFormat::Zpl, or LabelFormat::Epl
+$document->extension; // pdf, zpl, or epl
+
+return response($document->contents, 200, [
+    'Content-Type' => $document->mimeType,
+    'Content-Disposition' => 'attachment; filename="label.'.$document->extension.'"',
+]);
+```
+
+`downloadLabel()` accepts a successful `Label`, a `LabelSheetResult` returned by sheet creation or reprint, or its URL string. It uses Laravel's HTTP client and returns a readonly `LabelDocument`; it does not write to Laravel Storage or the filesystem.
+
+Downloads require HTTPS on the exact documented host `ws-etikett.paketomat.at`, with a PDF/ZPL/EPL filename at the root or under `/secure/`. Credentials, fragments, nonstandard ports, other hosts, and unexpected paths are rejected before a request is sent. Redirects are disabled. Failed label results, unsuccessful HTTP responses, unexpected MIME types, empty contents, invalid PDF headers, and HTML/JSON error pages are rejected. Printer commands are returned as text without being interpreted. Missing or generic binary MIME headers are normalized using the URL's format. Digital-code PNG URLs are not label documents supported by this method.
+
+The download uses the configured HTTP timeouts and sends no DPD API credentials. Expired URLs produce `DpdTransportException` when DPD returns an HTTP error; an error page returned with HTTP 200 produces `DpdResponseException`.
 
 DPD documents that a returned label link remains valid for one week, but after the link is first called it is only active for one hour. Persist the label content in your own storage when your workflow needs longer retention.
 

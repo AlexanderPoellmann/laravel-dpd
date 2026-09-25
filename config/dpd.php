@@ -15,4 +15,9 @@ return [
     'connect_timeout' => (int) env('DPD_CONNECT_TIMEOUT', 10),
     'retries' => (int) env('DPD_RETRIES', 2),
     'retry_delay_ms' => (int) env('DPD_RETRY_DELAY_MS', 250),
+
+    // Opt in to sanitized package request events. No logging is configured.
+    'events' => [
+        'enabled' => (bool) env('DPD_EVENTS_ENABLED', false),
+    ],
 ];

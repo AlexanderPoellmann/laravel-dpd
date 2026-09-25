@@ -42,4 +42,20 @@ enum DpdErrorCode: string
     case OrderSaveFailed = 'AU03';
     case OrderUpdateNotAllowed = 'AU04';
     case OrderSaveGeneralError = 'AU05';
+    case InvalidFixedTime = 'PR01-fix';
+    case Product1NotAllowed = 'PR01-X';
+    case InvalidHigherInsurance = 'PR02-hv';
+    case InvalidDepositPermission = 'PR02-asg';
+    case InvalidIdentityCheck = 'PR02-id';
+    case InvalidDepartmentDelivery = 'PR02-abt';
+    case InvalidAviso = 'PR02-aviso';
+    case Product2NotAllowed = 'PR02-X';
+    case InvalidDpdCashOnDelivery = 'PR03-nachnahme';
+    case InvalidPrimetimeCashOnDelivery = 'PR03-nnbar';
+    case Product3NotAllowed = 'PR03-X';
+    case InvalidValuableParcel = 'PR04-wp';
+    case Product4NotAllowed = 'PR04-X';
+    case Product5NotAllowed = 'PR05-X';
+    case InvalidProduct6Aviso = 'PR06-aviso';
+    case Product6NotAllowed = 'PR06-X';
 }

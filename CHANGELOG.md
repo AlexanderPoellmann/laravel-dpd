@@ -2,6 +2,21 @@
 
 All notable changes to `laravel-dpd` will be documented in this file.
 
+## 0.2.0 - 2026-09-25
+
+- Add `serviceStatus()` for WEB.Service availability; retain `status()` as a deprecated forwarding alias on the client and facade.
+- Add opt-in sanitized request started/succeeded/failed Laravel events for the REST transport and label downloads. Events include timing and outcome metadata only; no automatic logging is added.
+- Add `downloadLabel()` and binary `LabelDocument` results with validated DPD URLs, disabled redirects, and format/MIME metadata.
+- Expose structured `DpdError` values on API exceptions and label results, including documented service-specific matchcodes and global errors inside successful envelopes.
+- Keep raw transport response bodies in explicit diagnostic properties instead of exception messages.
+- Add typed Product 2–7 additional services with monetary, email, name, and product-family validation, plus explicit raw payload support.
+- Compose services with `Products::with()`, retain existing helper methods and raw constructor arguments, and support typed order import service values.
+- Model label shipments as an explicit list of parcels, deriving `pakanz` and encoding individual weights in DPD's tilde format.
+- Move delivery references and invoice number to `LabelRequest`, with documented field limits.
+- Validate parcel counts, individual weights, shared request fields, and shipping dates against WEB.Service 1.0.6.
+- Add exact HTTP payload tests for single parcels, heterogeneous three-parcel shipments, and the documented REST example with omitted weights.
+- Breaking: rename `LabelRequest`'s `parcel` argument/property to `parcels`; remove `Parcel`'s references/invoice fields. The optional legacy count argument must match the actual list. See README migration notes.
+
 ## 0.1.0 - 2026-09-25
 
 - Initial DPD WEB.Service 1.0.6 REST integration.

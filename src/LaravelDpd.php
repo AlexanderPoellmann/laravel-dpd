@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace AlexanderPoellmann\LaravelDpd;
 
 use AlexanderPoellmann\LaravelDpd\Actions\CancelLabel;
@@ -7,12 +9,15 @@ use AlexanderPoellmann\LaravelDpd\Actions\CreateCollectionRequest;
 use AlexanderPoellmann\LaravelDpd\Actions\CreateLabel;
 use AlexanderPoellmann\LaravelDpd\Actions\CreateLabelSheet;
 use AlexanderPoellmann\LaravelDpd\Actions\CreatePickupOrder;
+use AlexanderPoellmann\LaravelDpd\Actions\DownloadLabel;
 use AlexanderPoellmann\LaravelDpd\Actions\GetSelfBookingList;
 use AlexanderPoellmann\LaravelDpd\Actions\GetStatus;
 use AlexanderPoellmann\LaravelDpd\Actions\ImportOrder;
 use AlexanderPoellmann\LaravelDpd\Actions\ReprintLabel;
 use AlexanderPoellmann\LaravelDpd\Data\CancellationResult;
 use AlexanderPoellmann\LaravelDpd\Data\CollectionRequest;
+use AlexanderPoellmann\LaravelDpd\Data\Label;
+use AlexanderPoellmann\LaravelDpd\Data\LabelDocument;
 use AlexanderPoellmann\LaravelDpd\Data\LabelRequest;
 use AlexanderPoellmann\LaravelDpd\Data\LabelResult;
 use AlexanderPoellmann\LaravelDpd\Data\LabelSheetRequest;
@@ -22,6 +27,7 @@ use AlexanderPoellmann\LaravelDpd\Data\OrderImportRequest;
 use AlexanderPoellmann\LaravelDpd\Data\PickupOrderRequest;
 use AlexanderPoellmann\LaravelDpd\Data\SelfBookingListResult;
 use AlexanderPoellmann\LaravelDpd\Data\ServiceState;
+use AlexanderPoellmann\LaravelDpd\Data\TrackingNumber;
 use AlexanderPoellmann\LaravelDpd\Enums\LabelFormat;
 use AlexanderPoellmann\LaravelDpd\Enums\SelfBookingMode;
 use DateTimeInterface;
@@ -38,6 +44,7 @@ final readonly class LaravelDpd
         private CreateCollectionRequest $createCollectionRequest,
         private ImportOrder $importOrder,
         private GetStatus $getStatus,
+        private DownloadLabel $downloadLabel = new DownloadLabel,
     ) {}
 
     public function createLabel(LabelRequest $request): LabelResult
@@ -45,17 +52,22 @@ final readonly class LaravelDpd
         return $this->createLabel->handle($request);
     }
 
+    public function downloadLabel(Label|LabelSheetResult|string $label): LabelDocument
+    {
+        return $this->downloadLabel->handle($label);
+    }
+
     public function createLabelSheet(LabelSheetRequest $request): LabelSheetResult
     {
         return $this->createLabelSheet->handle($request);
     }
 
-    public function cancelLabel(string $trackingNumber): CancellationResult
+    public function cancelLabel(string|TrackingNumber $trackingNumber): CancellationResult
     {
         return $this->cancelLabel->handle($trackingNumber);
     }
 
-    public function reprintLabel(string $trackingNumber, LabelFormat $format = LabelFormat::Pdf): LabelSheetResult
+    public function reprintLabel(string|TrackingNumber $trackingNumber, LabelFormat $format = LabelFormat::Pdf): LabelSheetResult
     {
         return $this->reprintLabel->handle($trackingNumber, $format);
     }
@@ -84,8 +96,18 @@ final readonly class LaravelDpd
     }
 
     /** @return list<ServiceState> */
-    public function status(): array
+    public function serviceStatus(): array
     {
         return $this->getStatus->handle();
+    }
+
+    /**
+     * @return list<ServiceState>
+     *
+     * @deprecated Use serviceStatus() to retrieve WEB.Service availability.
+     */
+    public function status(): array
+    {
+        return $this->serviceStatus();
     }
 }

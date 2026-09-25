@@ -95,7 +95,8 @@ it('preserves the original connection exception', function () {
         test()->fail('Expected a transport exception.');
     } catch (DpdTransportException $exception) {
         expect($exception->getPrevious())->toBeInstanceOf(ConnectionException::class)
-            ->and($exception->getMessage())->toContain('Connection timed out.');
+            ->and($exception->getPrevious()->getMessage())->toBe('Connection timed out.')
+            ->and($exception->getMessage())->toBe('Unable to communicate with DPD.');
     }
 });
 

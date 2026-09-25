@@ -39,7 +39,7 @@ it('enforces DPD conditional recipient requirements before sending', function ()
 
     expect(fn () => new LabelRequest(
         recipient: $recipient,
-        parcel: new Parcel(ParcelType::ParcelShop, 1000),
+        parcels: new Parcel(ParcelType::ParcelShop, 1000),
         products: new Products(Product1::NormalParcel),
         shippingDate: new DateTimeImmutable('2026-09-25'),
     ))->toThrow(InvalidArgumentException::class, 'parcel shop');

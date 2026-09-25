@@ -1,31 +1,49 @@
 <?php
 
+declare(strict_types=1);
+
 namespace AlexanderPoellmann\LaravelDpd\Data;
 
+use AlexanderPoellmann\LaravelDpd\Contracts\AdditionalService;
+use AlexanderPoellmann\LaravelDpd\Data\AdditionalServices\HigherInsurance;
+use AlexanderPoellmann\LaravelDpd\Data\AdditionalServices\Predict;
+use AlexanderPoellmann\LaravelDpd\Data\AdditionalServices\RawAdditionalService;
+use AlexanderPoellmann\LaravelDpd\Enums\ParcelType;
 use AlexanderPoellmann\LaravelDpd\Enums\Product1;
+use AlexanderPoellmann\LaravelDpd\Enums\ProductSlot;
+use InvalidArgumentException;
 
 final readonly class Products
 {
     /**
-     * Product 2-7 values can be a scalar service code or a keyed structure as documented by DPD,
-     * e.g. ['hv' => '1500000'] or ['pred' => 'mail@example.com'].
+     * Arrays and strings remain supported for backwards compatibility. Prefer typed services or withRaw().
      *
-     * @param  array<string, string>|string|null  $product2
-     * @param  array<string, string>|string|null  $product3
-     * @param  array<string, string>|string|null  $product4
-     * @param  array<string, string>|string|null  $product5
-     * @param  array<string, string>|string|null  $product6
-     * @param  array<string, string>|string|null  $product7
+     * @param  AdditionalService|array<string, mixed>|string|null  $product2
+     * @param  AdditionalService|array<string, mixed>|string|null  $product3
+     * @param  AdditionalService|array<string, mixed>|string|null  $product4
+     * @param  AdditionalService|array<string, mixed>|string|null  $product5
+     * @param  AdditionalService|array<string, mixed>|string|null  $product6
+     * @param  AdditionalService|array<string, mixed>|string|null  $product7
      */
     public function __construct(
         public Product1|string $product1,
-        public array|string|null $product2 = null,
-        public array|string|null $product3 = null,
-        public array|string|null $product4 = null,
-        public array|string|null $product5 = null,
-        public array|string|null $product6 = null,
-        public array|string|null $product7 = null,
-    ) {}
+        public AdditionalService|array|string|null $product2 = null,
+        public AdditionalService|array|string|null $product3 = null,
+        public AdditionalService|array|string|null $product4 = null,
+        public AdditionalService|array|string|null $product5 = null,
+        public AdditionalService|array|string|null $product6 = null,
+        public AdditionalService|array|string|null $product7 = null,
+    ) {
+        foreach ($this->additionalProducts() as $slot => $service) {
+            if ($service instanceof AdditionalService) {
+                if ($service->slot()->value !== $slot) {
+                    throw new InvalidArgumentException("DPD additional service belongs in product {$service->slot()->value}, not product {$slot}.");
+                }
+
+                $service->validateProduct($this->product1);
+            }
+        }
+    }
 
     public static function normalParcel(): self
     {
@@ -37,43 +55,62 @@ final readonly class Products
         return new self(Product1::SmallParcel);
     }
 
-    public function withHigherInsurance(int $amountInCents): self
+    /** Returns a new Products instance, replacing the service in the same product slot. */
+    public function with(AdditionalService $service): self
     {
+        $slot = $service->slot();
+
         return new self(
             product1: $this->product1,
-            product2: ['hv' => (string) $amountInCents],
-            product3: $this->product3,
-            product4: $this->product4,
-            product5: $this->product5,
-            product6: $this->product6,
-            product7: $this->product7,
+            product2: $slot === ProductSlot::Product2 ? $service : $this->product2,
+            product3: $slot === ProductSlot::Product3 ? $service : $this->product3,
+            product4: $slot === ProductSlot::Product4 ? $service : $this->product4,
+            product5: $slot === ProductSlot::Product5 ? $service : $this->product5,
+            product6: $slot === ProductSlot::Product6 ? $service : $this->product6,
+            product7: $slot === ProductSlot::Product7 ? $service : $this->product7,
         );
+    }
+
+    /** @param array<string, mixed>|string $payload */
+    public function withRaw(ProductSlot $slot, array|string $payload): self
+    {
+        return $this->with(new RawAdditionalService($slot, $payload));
+    }
+
+    public function withHigherInsurance(int $amountInCents): self
+    {
+        return $this->with(new HigherInsurance($amountInCents));
     }
 
     public function withPredict(string $email): self
     {
-        return new self(
-            product1: $this->product1,
-            product2: $this->product2,
-            product3: $this->product3,
-            product4: $this->product4,
-            product5: $this->product5,
-            product6: ['pred' => $email],
-            product7: $this->product7,
-        );
+        return $this->with(new Predict($email));
     }
 
-    /** @return array<string, array|string> */
+    public function validateParcelType(ParcelType $type): void
+    {
+        foreach ($this->additionalProducts() as $service) {
+            if ($service instanceof AdditionalService) {
+                $service->validateParcelType($type);
+            }
+        }
+    }
+
+    /** @return array<string, array<string, mixed>|string> */
     public function toArray(): array
     {
-        return [
-            'produkt1' => $this->product1 instanceof Product1 ? $this->product1->value : $this->product1,
-            'produkt2' => $this->product2 ?? '',
-            'produkt3' => $this->product3 ?? '',
-            'produkt4' => $this->product4 ?? '',
-            'produkt5' => $this->product5 ?? '',
-            'produkt6' => $this->product6 ?? '',
-            'produkt7' => $this->product7 ?? '',
-        ];
+        $payload = ['produkt1' => $this->product1 instanceof Product1 ? $this->product1->value : $this->product1];
+
+        foreach ($this->additionalProducts() as $slot => $service) {
+            $payload['produkt'.$slot] = $service instanceof AdditionalService ? $service->toPayload() : ($service ?? '');
+        }
+
+        return $payload;
+    }
+
+    /** @return array<int, AdditionalService|array<string, mixed>|string|null> */
+    private function additionalProducts(): array
+    {
+        return [2 => $this->product2, 3 => $this->product3, 4 => $this->product4, 5 => $this->product5, 6 => $this->product6, 7 => $this->product7];
     }
 }
