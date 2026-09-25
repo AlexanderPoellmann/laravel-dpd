@@ -2,6 +2,14 @@
 
 All notable changes to `laravel-dpd` will be documented in this file.
 
+## 0.3.0 - 2026-09-25
+
+- Integrate shared shipping contracts through `DpdShippingAdapter` for carrier identity, shipment creation, label downloads, and cancellation.
+- Register the concrete adapter under `shipping.adapters` without globally binding shared capability interfaces.
+- Keep DPD products, parcel types, and label formats on immutable adapter configurations.
+- Preserve sender address additions and reject incomplete shipment results with `DpdShipmentCreationException`, retaining the native result for recovery.
+- Add adapter regression coverage and document shared DTO mapping, installation, and failure handling.
+
 ## 0.2.0 - 2026-09-25
 
 - Add `serviceStatus()` for WEB.Service availability; retain `status()` as a deprecated forwarding alias on the client and facade.

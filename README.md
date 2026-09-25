@@ -60,6 +60,58 @@ Override it with `DPD_ENDPOINT` when DPD provides another endpoint.
 
 > DPD's documentation states that test credentials must not be used with real recipient data.
 
+## Shared shipping contracts
+
+`DpdShippingAdapter` implements `Carrier`, `CreatesShipments`, `DownloadsLabels`, and `CancelsShipments` from `alexanderpoellmann/shipping-contracts`. Its carrier identity is `dpd`. Laravel registers the concrete adapter as a singleton under the shared `shipping.adapters` tag, with no global capability binding, so applications can install multiple carrier packages.
+
+```php
+use AlexanderPoellmann\LaravelDpd\Data\Products;
+use AlexanderPoellmann\LaravelDpd\Enums\LabelFormat;
+use AlexanderPoellmann\LaravelDpd\Enums\ParcelType;
+use AlexanderPoellmann\LaravelDpd\Shipping\DpdShippingAdapter;
+use AlexanderPoellmann\Shipping\Data\Address;
+use AlexanderPoellmann\Shipping\Data\Parcel;
+use AlexanderPoellmann\Shipping\Data\Shipment;
+
+$adapter = app(DpdShippingAdapter::class)
+    ->forProducts(Products::normalParcel()->withPredict('recipient@example.com'))
+    ->forParcelType(ParcelType::B2c)
+    ->withLabelFormat(LabelFormat::Pdf);
+
+$shipment = new Shipment(
+    sender: new Address('Sender GmbH', 'Senderstrasse', '1010', 'Wien', 'AT', houseNumber: '1'),
+    recipient: new Address('Receiver GmbH', 'Receiverstrasse', '4020', 'Linz', 'AT', houseNumber: '2'),
+    parcels: [new Parcel(weightInGrams: 1200)],
+    reference: 'ORDER-42',
+);
+
+$result = $adapter->createShipment($shipment);
+$downloaded = $adapter->downloadLabel($result->labels[0]);
+// $downloaded->contents contains the document bytes.
+
+// When cancellation is needed, pass a returned neutral TrackingNumber:
+// $cancellation = $adapter->cancelShipment($result->trackingNumbers[0]);
+```
+
+Products must be configured before creation. Each configuration method returns a new adapter; it does not mutate the container singleton. Parcel type defaults to `DPD` and label format to PDF. An omitted shipping date defaults to today in PHP's configured timezone. DPD `Products`, `Product1`, parcel types, and label formats remain native configuration; the neutral `Shipment` has no service or carrier options.
+
+Discover installed adapters by identity and check the capability needed by your application:
+
+```php
+use AlexanderPoellmann\Shipping\Contracts\Carrier;
+
+$adapters = collect(app()->tagged('shipping.adapters'))
+    ->keyBy(fn (Carrier $adapter): string => $adapter->carrier());
+```
+
+Native DPD validation runs before sending a shipment, including parcel limits, required weights, and identical dimensions within one request. Recipient `name2` and `additional` map to DPD's two additional address fields. For senders, both are joined with a comma in DPD's single `adresse2` field. Use the native `LabelRequest` API below for fields outside the shared model, such as parcel shop IDs, label options, or delivery references.
+
+Creation returns neutral labels in response order and tracking numbers where DPD supplies them, preserving leading zeroes. If DPD returns an incomplete result, including a label error or a label count that differs from the parcel count, the adapter throws `DpdShipmentCreationException` (a `DpdResponseException`). Its `$result` property preserves the native `LabelResult`, including successful sibling labels, structured errors, and the raw response. Inspect it before retrying: some parcels may already have been created. API and transport exceptions propagate unchanged, and creation is never automatically retried.
+
+Label downloads require a DPD URL and use the native URL and document validation. They return a new neutral label containing bytes, MIME type, and format. Cancellation validates the neutral tracking number against DPD rules and preserves the returned cancellation flag, including `false`.
+
+Tracking, separate label creation, and pickup scheduling have no shared capabilities in this integration. Continue to use the native APIs for service availability, reprints, and pickup requests.
+
 ## Create a label
 
 ```php
