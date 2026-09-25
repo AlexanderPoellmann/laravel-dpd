@@ -1,48 +1,49 @@
 {
-    "name": ":vendor_slug/:package_slug",
-    "description": ":package_description",
+    "name": "alexanderpoellmann/laravel-dpd",
+    "description": "A Laravel integration for the DPD Austria / Gebrüder Weiss Paketdienst WEB.Service.",
     "keywords": [
-        ":vendor_name",
         "laravel",
-        ":package_slug"
+        "laravel-dpd",
+        "dpd",
+        "shipping",
+        "parcel",
+        "web.service"
     ],
-    "homepage": "https://github.com/:vendor_slug/:package_slug",
+    "homepage": "https://github.com/alexanderpoellmann/laravel-dpd",
     "license": "MIT",
     "authors": [
         {
-            "name": ":author_name",
-            "email": "author@domain.com",
+            "name": "Alexander Manfred Poellmann",
+            "homepage": "https://github.com/alexanderpoellmann",
             "role": "Developer"
         }
     ],
     "require": {
         "php": "^8.4",
-        "spatie/laravel-package-tools": "^1.16",
-        "illuminate/contracts": "^11.0||^12.0||^13.0"
+        "illuminate/http": "^12.0|^13.0",
+        "illuminate/support": "^12.0|^13.0",
+        "spatie/laravel-package-tools": "^1.16"
     },
     "require-dev": {
-        "laravel/pint": "^1.14",
+        "laravel/pint": "^1.29",
+        "larastan/larastan": "^3.8",
         "nunomaduro/collision": "^8.8",
-        "larastan/larastan": "^3.0",
-        "orchestra/testbench": "^11.0.0||^10.0.0||^9.0.0",
+        "orchestra/testbench": "^10.0|^11.0",
         "pestphp/pest": "^4.0",
         "pestphp/pest-plugin-arch": "^4.0",
         "pestphp/pest-plugin-laravel": "^4.0",
         "phpstan/extension-installer": "^1.4",
         "phpstan/phpstan-deprecation-rules": "^2.0",
-        "phpstan/phpstan-phpunit": "^2.0",
-        "spatie/laravel-ray": "^1.35"
+        "phpstan/phpstan-phpunit": "^2.0"
     },
     "autoload": {
         "psr-4": {
-            "VendorName\\Skeleton\\": "src/",
-            "VendorName\\Skeleton\\Database\\Factories\\": "database/factories/"
+            "AlexanderPoellmann\\LaravelDpd\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "VendorName\\Skeleton\\Tests\\": "tests/",
-            "Workbench\\App\\": "workbench/app/"
+            "AlexanderPoellmann\\LaravelDpd\\Tests\\": "tests/"
         }
     },
     "scripts": {
@@ -51,7 +52,8 @@
         "analyse": "vendor/bin/phpstan analyse",
         "test": "vendor/bin/pest",
         "test-coverage": "vendor/bin/pest --coverage",
-        "format": "vendor/bin/pint"
+        "format": "vendor/bin/pint",
+        "format:test": "vendor/bin/pint --test"
     },
     "config": {
         "sort-packages": true,
@@ -63,10 +65,10 @@
     "extra": {
         "laravel": {
             "providers": [
-                "VendorName\\Skeleton\\SkeletonServiceProvider"
+                "AlexanderPoellmann\\LaravelDpd\\LaravelDpdServiceProvider"
             ],
             "aliases": {
-                "Skeleton": "VendorName\\Skeleton\\Facades\\Skeleton"
+                "Dpd": "AlexanderPoellmann\\LaravelDpd\\Facades\\Dpd"
             }
         }
     },
